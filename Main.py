@@ -1,47 +1,68 @@
 import streamlit as st
 import pandas as pd
-import pickle
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.compose import ColumnTransformer
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import OneHotEncoder
 
-# Load trained model
-with open('best_model.pkl', 'rb') as f:
-    model = pickle.load(f)
+# Define numeric and categorical features
+numeric_features = ['Age', 'SibSp', 'Parch']
+categorical_features = ['Sex', 'Pclass']
 
-# Create Streamlit app
-st.title("Titanic Survival Prediction")
+# Define preprocessors
+numeric_transformer = SimpleImputer(strategy='mean')
+categorical_transformer = OneHotEncoder(handle_unknown='ignore')
 
-# User input
-st.subheader("Enter features:")
-age = st.number_input("Age")
-sex = st.selectbox("Sex", ["Male", "Female"])
-embarked = st.selectbox("Embarked", ["S", "C", "Q"])
-fare = st.number_input("Fare")
-parch = st.number_input("Number of Parents/Children")
-passenger_id = st.number_input("Passenger ID")
-pclass = st.selectbox("Passenger Class", [1, 2, 3])
-sibsp = st.number_input("Number of Siblings/Spouses")
+preprocessor = ColumnTransformer(
+    transformers=[
+        ('num', numeric_transformer, numeric_features),
+        ('cat', categorical_transformer, categorical_features)
+    ]
+)
 
-# Predict button
-if st.button("Predict"):
-    # Map sex and embarked to numerical values
-    sex_map = {"Male": 0, "Female": 1}
-    embarked_map = {"S": 0, "C": 1, "Q": 2}
-    pclass_map = {1: 0, 2: 1, 3: 2}
-    
-    # Create input dataframe with exact feature names and order
-    input_df = pd.DataFrame({
-        'Age': [age],
-        'Sex': [sex_map[sex]],
-        'Embarked': [embarked_map[embarked]],
-        'Fare': [fare],
-        'Parch': [parch],
-        'PassengerId': [passenger_id],
-        'Pclass': [pclass_map[pclass]],
-        'SibSp': [sibsp]
-    }, columns=model.feature_names_in_)  # Ensure correct order
-    
-    # Make prediction
-    prediction = model.predict(input_df)
-    
-    # Display result
-    st.subheader("Prediction:")
-    st.write("Survived" if prediction[0] == 1 else "Did not survive")
+# Define pipeline
+pipeline = Pipeline([
+    ('preprocessor', preprocessor),
+    ('clf', RandomForestClassifier(n_estimators=300, random_state=42))
+])
+
+# Load data
+train_df = pd.read_csv('Titanic_train.csv')
+
+# Train model
+X_train = train_df.drop('Survived', axis=1)
+y_train = train_df['Survived']
+pipeline.fit(X_train, y_train)
+
+# Make predictions
+y_pred = pipeline.predict(train_df.drop('Survived', axis=1))
+
+# Streamlit app
+st.write("Titanic Survival Prediction")
+st.write("-------------------------------")
+
+# Input form
+with st.form("input_form"):
+    Pclass = st.selectbox("Passenger Class", [1, 2, 3])
+    Sex = st.selectbox("Sex", ["male", "female"])
+    Age = st.number_input("Age", min_value=1, max_value=120, value=21, step=1)
+    SibSp = st.number_input("Siblings/Spouses", min_value=0, max_value=10, value=0, step=1)
+    Parch = st.number_input("Parents/Children", min_value=0, max_value=10, value=0, step=1)
+    submit = st.form_submit_button("Predict")
+
+# Prediction
+if submit:
+    input_df = pd.DataFrame([[Pclass, Sex, Age, SibSp, Parch]], columns=['Pclass', 'Sex', 'Age', 'SibSp', 'Parch'])
+    prediction = pipeline.predict(input_df)
+    if prediction[0] == 1:
+        st.write("Survival Prediction: Survived")
+    else:
+        st.write("Survival Prediction: Not Survived")
+
+# Display predictions
+st.write("Training Predictions:")
+survived_counts = y_pred.sum()
+not_survived_counts = len(y_pred) - survived_counts
+st.write(f"Survived: {survived_counts} ({survived_counts/len(y_pred)*100:.2f}%)")
+st.write(f"Not Survived: {not_survived_counts} ({not_survived_counts/len(y_pred)*100:.2f}%)")
